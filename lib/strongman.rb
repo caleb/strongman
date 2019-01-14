@@ -11,29 +11,34 @@ class Strongman
   class Batch
     attr_accessor :parent
     attr_accessor :name
+    attr_accessor :lock
+    attr_accessor :fulfilled
+    attr_accessor :fulfilling
 
     def initialize(loader_block, name: nil, parent: nil, max_batch_size: Float::INFINITY)
-      @name           = name
-      @queue          = Concurrent::Array.new
-      @promise        = Concurrent::Promises.resolvable_future
-      @loader_block   = loader_block
-      @lock           = Concurrent::ReadWriteLock.new
-      @parent         = parent
-      @children       = Concurrent::Array.new
-      @fulfilling     = Concurrent::Atom.new(false)
-      @fulfilled      = Concurrent::Atom.new(false)
+      @name = name
+      @queue = Concurrent::Array.new
+      @promise = Concurrent::Promises.resolvable_future
+      @loader_block = loader_block
+      @lock = Concurrent::ReadWriteLock.new
+      @parent = parent
+      @children = Concurrent::Array.new
+      @fulfilling = Concurrent::AtomicBoolean.new(false)
+      @fulfilled = Concurrent::AtomicBoolean.new(false)
       @max_batch_size = max_batch_size
 
       @parent.children << self if @parent
+
+      @root = nil
+      @batch_chain = nil
     end
 
     def fulfilled?
-      # @promise.fulfilled?
-      @fulfilled.value
+      root.fulfilled.true?
     end
 
     def fulfilling?
-      @fulfilling.value
+      root.fulfilling.true?
     end
 
     def needs_fulfilling?
@@ -57,12 +62,12 @@ class Strongman
         end
       end.flat
 
-
       #
       # If our queue is full, fulfill immediately and return the bare future
       #
       if @queue.size >= @max_batch_size
-        fulfill_hierarchy
+        root.fulfill_hierarchy
+
         future
       else
         #
@@ -70,18 +75,40 @@ class Strongman
         # to the inner future
         #
         Concurrent::Promises.delay do
-          fulfill_hierarchy if needs_fulfilling?
+          # with_lock do
+          root.fulfill_hierarchy if root.needs_fulfilling?
+          # end
+
           future
         end.flat
       end
     end
 
-    def fulfill_hierarchy
-      if needs_fulfilling?
-        ap "Trying to fulfill #{name} #{object_id}"
+    def mark_fulfilled!
+      root.fulfilled.make_true
+      self
+    end
 
-        batches = []
+    def mark_fulfilling!
+      root.fulfilling.make_true
+      self
+    end
 
+    def mark_not_fulfilling!
+      root.fulfilling.make_false
+      self
+    end
+
+    def with_lock
+      root.lock.with_write_lock do
+        yield
+      end
+    end
+
+    def root
+      if @root
+        @root
+      else
         find_top = -> (batch) {
           if batch.parent
             find_top.(batch.parent)
@@ -90,63 +117,56 @@ class Strongman
           end
         }
 
-        top = find_top.(self)
+        @root = find_top.(self)
+      end
+    end
+
+    def batch_chain
+      if @batch_chain
+        @batch_chain
+      else
+        @batch_chain = Concurrent::Array.new
 
         add_children = -> (batch) {
-          batches << batch
+          @batch_chain << batch
           if batch.children.size > 0
             batch.children.flat_map(&add_children)
           end
         }
-        add_children.(top)
+        add_children.(root)
 
-        ap batches.map(&:name).reverse
+        @batch_chain
+      end
+    end
 
-        batches.reverse.each(&:fulfill!)
+    def fulfill_hierarchy
+      raise Error.new("Only run #fulfill_hierarchy on root batches") if @parent
 
-        # ap batches.map(&:name)
-        #
-        #
-        # ap "trying to fulfill #{@name}"
-        # begin
-        #   @fulfilling.swap { true }
-        #
-        #   if @parent
-        #     @parent.fulfill
-        #   else
-        #     fulfill!
-        #   end
-        # ensure
-        #   @fulfilling.swap { false }
-        # end
+      with_lock do
+        return if fulfilled?
+
+        mark_fulfilling!
+        batch_chain.reverse.each(&:fulfill!)
+      ensure
+        mark_fulfilled!
+        mark_not_fulfilling!
       end
     end
 
     def fulfill!
-      @lock.with_write_lock do
-        if needs_fulfilling?
-          @fulfilling.swap { true }
+      results = @loader_block.call(@queue)
 
-          ap "fulfilling #{@name} #{object_id}"
-          # @children.each(&:fulfill!)
-
-          results = @loader_block.call(@queue)
-
-          if results.is_a?(Concurrent::Promises::Future)
-            # if the strongman loader block returns a promise (e.g. if the block uses another loader),
-            # make sure to touch it to kick off any delayed effects before chaining
-            results.touch.then do |inner_results|
-              @promise.fulfill(normalize_results(inner_results))
-            end.flat
-          else
-            @promise.fulfill(normalize_results(results))
-          end
-
-          @fulfilled.swap { true }
-        end
-      ensure
-        @fulfilling.swap { false }
+      if results.is_a?(Concurrent::Promises::Future)
+        # if the strongman loader block returns a promise (e.g. if the block uses another loader),
+        # make sure to touch it to kick off any delayed effects before chaining
+        results.touch.then do |inner_results|
+          @promise.fulfill(normalize_results(inner_results))
+        end.flat
+      else
+        @promise.fulfill(normalize_results(results))
       end
+
+      self
     end
 
     def children
@@ -184,17 +204,17 @@ class Strongman
         "Array and returns either Array or Hash of the same size (or Promise)"
     end
 
-    @name           = options.delete(:name)
-    @parent         = options.delete(:parent)
-    @cache          = if options.has_key?(:cache)
-                        options.delete(:cache) || NoCache.new
-                      else
-                        Concurrent::Map.new
-                      end
+    @name = options.delete(:name)
+    @parent = options.delete(:parent)
+    @cache = if options.has_key?(:cache)
+               options.delete(:cache) || NoCache.new
+             else
+               Concurrent::Map.new
+             end
     @max_batch_size = options.fetch(:max_batch_size, Float::INFINITY)
 
     @loader_block = if @parent
-                      -> (ids) { block.call(@parent, ids) }
+                      -> (ids) {block.call(@parent, ids)}
                     else
                       block
                     end
@@ -216,7 +236,7 @@ class Strongman
     if result.is_a?(Concurrent::Promises::Future)
       result
     else
-      Concurrent::Promises.future { result }
+      Concurrent::Promises.future {result}
     end
   end
 
@@ -226,7 +246,7 @@ class Strongman
     end
 
     promises = keys.map(&method(:load))
-    Concurrent::Promises.zip_futures(*promises).then { |*results| results }
+    Concurrent::Promises.zip_futures(*promises).then {|*results| results}
   end
 
   def batch

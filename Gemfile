@@ -1,9 +1,9 @@
-source "https://rubygems.org"
+source 'https://rubygems.org'
 
 gemspec
 
-gem "awesome_print"
-gem "rspec"
+gem 'awesome_print'
+gem 'rspec'
 
-gem "codecov", require: false
-gem "simplecov", require: false
+gem 'codecov', require: false
+gem 'simplecov', require: false

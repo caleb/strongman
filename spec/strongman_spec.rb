@@ -242,13 +242,11 @@ describe Strongman do
     loads = []
 
     loader = Strongman.new(name: "loader 1") do |ids|
-      ap "loader"
       loads.push(["loader", ids])
       ids.map { |id| {name: "bar #{id}"} }
     end
 
     loader2 = loader.sub_loader(name: "loader 2") do |parent, ids|
-      ap "loader2"
       loads.push(["loader2", ids])
 
       parent.load_many(ids).then do |records|
@@ -262,7 +260,6 @@ describe Strongman do
     four  = loader2.load_many([2, 3, 5])
 
     loader3 = loader2.sub_loader(name: "loader 3") do |parent, ids|
-      ap "loader3"
       loads.push(["loader3", ids])
 
       parent.load_many(ids).then do |names|

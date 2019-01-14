@@ -9,7 +9,7 @@ end
 
 $LOAD_PATH.push File.expand_path("../../lib", __FILE__)
 
-require "strongman"
+require 'strongman'
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

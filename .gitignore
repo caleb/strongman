@@ -7,5 +7,6 @@ pkg/
 *.rbc
 *.gem
 .yardoc/
+.idea/
 doc/
 coverage/
