@@ -230,7 +230,7 @@ class Strongman
     @loader_block = @interceptor.call(block)
   end
 
-  def sub_loader(**options, &block)
+  def chain(**options, &block)
     Strongman.new(**options, parent: self, &block)
   end
 

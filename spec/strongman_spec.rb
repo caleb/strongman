@@ -180,7 +180,7 @@ describe Strongman do
       ids.map {|_id| ids}
     end
 
-    data_transformer = data_loader.sub_loader do |parent, ids|
+    data_transformer = data_loader.chain do |parent, ids|
       parent.load_many(ids).then do |records|
         records.map(&:count)
       end
@@ -246,7 +246,7 @@ describe Strongman do
       ids.map {|id| {name: "bar #{id}"}}
     end
 
-    loader2 = loader.sub_loader(name: "loader 2") do |parent, ids|
+    loader2 = loader.chain(name: "loader 2") do |parent, ids|
       loads.push(["loader2", ids])
 
       parent.load_many(ids).then do |records|
@@ -259,7 +259,7 @@ describe Strongman do
     three = loader.load_many([2, 3])
     four = loader2.load_many([2, 3, 5])
 
-    loader3 = loader2.sub_loader(name: "loader 3") do |parent, ids|
+    loader3 = loader2.chain(name: "loader 3") do |parent, ids|
       loads.push(["loader3", ids])
 
       parent.load_many(ids).then do |names|
