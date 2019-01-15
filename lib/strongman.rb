@@ -213,11 +213,21 @@ class Strongman
              end
     @max_batch_size = options.fetch(:max_batch_size, Float::INFINITY)
 
-    @loader_block = if @parent
-                      -> (ids) {block.call(@parent, ids)}
-                    else
-                      block
-                    end
+    @interceptor = options.delete(:interceptor) || -> (n) {
+      -> (ids) {
+        n.call(ids)
+      }
+    }
+
+    if @parent
+      @interceptor = @interceptor.call(-> (n) {
+        -> (ids) {
+          n.call(@parent, ids)
+        }
+      })
+    end
+
+    @loader_block = @interceptor.call(block)
   end
 
   def sub_loader(**options, &block)
