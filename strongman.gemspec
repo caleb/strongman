@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   s.description = 'A data loading utility to batch loading of promises. It can be used with graphql gem.'
   s.license     = 'MIT'
 
-  s.add_runtime_dependency("concurrent-ruby", "~> 1")
+  s.add_runtime_dependency("concurrent-ruby", "~> 1.1")
 
   s.files         = Dir['lib/**/*'] + %w(LICENSE README.md)
   s.require_paths = ['lib']
