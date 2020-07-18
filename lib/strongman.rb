@@ -1,5 +1,4 @@
 require "concurrent"
-require "awesome_print"
 
 class Strongman
   class NoCache
