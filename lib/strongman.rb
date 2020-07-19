@@ -1,4 +1,4 @@
-require "concurrent"
+require 'concurrent'
 
 class Strongman
   class NoCache
