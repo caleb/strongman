@@ -11,6 +11,13 @@ class DelayedResult
     end
   end
 
+  def zip(*results, &block)
+    DelayedResult.new do
+      results = results.map(&:value!)
+      block.apply(results)
+    end
+  end
+
   def value!
     @value ||= @resolver.()
   end
