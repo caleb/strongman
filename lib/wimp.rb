@@ -11,7 +11,7 @@ class DelayedResult
     end
   end
 
-  def zip(*results, &block)
+  def self.zip(*results, &block)
     DelayedResult.new do
       results = results.map(&:value!)
       block.apply(results)
