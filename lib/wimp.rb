@@ -14,12 +14,18 @@ class DelayedResult
   def self.zip(*results, &block)
     DelayedResult.new do
       results = results.map(&:value!)
-      block.apply(results)
+      block.(*results)
     end
   end
 
   def value!
-    @value ||= @resolver.()
+    @value ||= @resolver.().yield_self do |val|
+      if val&.is_a?(DelayedResult)
+        val.value!
+      else
+        val
+      end
+    end
   end
 
   def value
@@ -62,7 +68,12 @@ class Wimp
                         @results
                       else
                         @fulfilled = true
-                        @results = normalize_results(@loader_block.(@queue))
+                        r = @loader_block.(@queue)
+                        @results = if r.is_a?(DelayedResult)
+                          normalize_results(r.value!)
+                        else
+                          normalize_results(r)
+                        end
                       end
                     end
                   end
@@ -95,8 +106,7 @@ class Wimp
 
       if results.is_a?(Array)
         Hash[@queue.zip(results)]
-      else
-        results.is_a?(Hash)
+      elsif results.is_a?(Hash)
         results
       end
     end

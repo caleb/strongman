@@ -282,4 +282,55 @@ describe Wimp do
     expect(one.value!).to eq([1])
     expect(accumulator.to_a).to eq(["before", [[1]], "after"])
   end
+
+  it "can have nested loaders" do
+    data_loader = Wimp.new do |ids|
+      ids.map {|id| id * 3}
+    end
+
+    data_loader2 = Wimp.new do |ids|
+      ids.map {|id| id * -1}
+    end
+
+    data_transformer = Wimp.new do |ids|
+      data_loader.load_many(ids).then do |records|
+        data_loader2.load_many(ids).then do |records2|
+          ids.zip(records, records2)
+        end
+      end
+    end
+
+    loader1_data = data_loader.load(1)
+    loader2_data = data_loader2.load(2)
+    transformer_one = data_transformer.load(1)
+    transformer_two = data_transformer.load(2)
+
+    expect(transformer_one.value!).to eq([1, 3, -1])
+    expect(transformer_two.value!).to eq([2, 6, -2])
+    expect(loader1_data.value!).to eq(3)
+    expect(loader2_data.value!).to eq(-2)
+  end
+
+  it "can zip nested loaders" do
+    data_loader = Wimp.new do |ids|
+      ids.map {|_id| ids}
+    end
+
+    data_loader2 = Wimp.new do |ids|
+      ids.map {|_id| ids}
+    end
+
+    parent_loader = Wimp.new do |ids|
+      l1 = data_loader.load(1)
+      l2 = data_loader.load(2)
+      DelayedResult.zip(l1, l2) do |r1, r2|
+        ids.map do |id|
+          id + r1.first + r2.first
+        end
+      end
+    end
+
+    v = parent_loader.load(3)
+    expect(v.value!).to eq(5)
+  end
 end
